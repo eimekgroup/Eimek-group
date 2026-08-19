@@ -4,8 +4,8 @@ const app = express();
 
 app.use(express.json());
 
-// Replace with your Telnyx API Key later
-const telnyx = new Telnyx('YOUR_TELNYX_API_KEY'); 
+// Automatically loads your API key from Render's Environment Variables
+const telnyx = new Telnyx(process.env.TELNYX_API_KEY); 
 
 // Replace with your purchased Telnyx phone number later
 const telnyxNumber = '+1YOUR_TELNYX_NUMBER';
@@ -23,7 +23,7 @@ app.post('/webhook', async (req, res) => {
   if (event && event.event_type === 'message.received') {
     const incomingSender = event.payload.from.phone_number;
     const messageBody = event.payload.text;
-
+    
     const outgoingText = `${incomingSender}: ${messageBody}`;
 
     for (let member of groupMembers) {
