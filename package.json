@@ -1,15 +1,14 @@
 {
-  "name": "sms-group-chat",
+  "name": "eimek-group",
   "version": "1.0.0",
+  "description": "Group chat server using Twilio and Google Sheets",
   "main": "server.js",
-  "dependencies": {
-    "express": "^4.19.2",
-    "telnyx": "^3.0.0"
-  },
-  "engines": {
-    "node": "18.x"
-  },
   "scripts": {
     "start": "node server.js"
+  },
+  "dependencies": {
+    "body-parser": "^1.20.2",
+    "express": "^4.19.2",
+    "twilio": "^4.23.0"
   }
 }
