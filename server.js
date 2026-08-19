@@ -1,50 +1,89 @@
 const express = require('express');
-const { Telnyx } = require('telnyx');
+const bodyParser = require('body-parser');
+const twilio = require('twilio');
+
 const app = express();
+app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.json());
 
-app.use(express.json());
+const accountSid = process.env.TWILIO_ACCOUNT_SID;
+const authToken = process.env.TWILIO_AUTH_TOKEN;
+const client = twilio(accountSid, authToken);
 
-// Automatically loads your API key from Render's Environment Variables
-const telnyx = new Telnyx(process.env.TELNYX_API_KEY); 
+const twilioNumber = process.env.TWILIO_PHONE_NUMBER;
+const sheetCsvUrl = process.env.GOOGLE_SHEET_CSV_URL;
 
-// Replace with your purchased Telnyx phone number later
-const telnyxNumber = '+1YOUR_TELNYX_NUMBER';
+async function getGroupMembers() {
+  if (!sheetCsvUrl) {
+    console.error('Google Sheet CSV URL not set!');
+    return [];
+  }
 
-// Paste your 50 group members' phone numbers here
-const groupMembers = [
-  '+15551112222', 
-  '+15553334444',
-  // Add all numbers here
-];
-
-app.post('/webhook', async (req, res) => {
-  const event = req.body.data;
-
-  if (event && event.event_type === 'message.received') {
-    const incomingSender = event.payload.from.phone_number;
-    const messageBody = event.payload.text;
+  try {
+    const response = await fetch(sheetCsvUrl);
+    const csvText = await response.text();
     
-    const outgoingText = `${incomingSender}: ${messageBody}`;
+    const rows = csvText.split('\n');
+    const members = [];
 
-    for (let member of groupMembers) {
-      if (member !== incomingSender) {
-        try {
-          await telnyx.messages.create({
-            from: telnyxNumber,
-            to: member,
-            text: outgoingText,
-          });
-        } catch (error) {
-          console.error(`Failed to send to ${member}:`, error);
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i].trim();
+      if (!row) continue;
+      
+      const cols = row.split(',');
+      if (cols.length >= 2) {
+        const name = cols[0].replace(/^["']|["']$/g, '').trim();
+        let rawNumber = cols[1].replace(/^["']|["']$/g, '').trim().replace(/\D/g, ''); // Keep digits only
+        
+        if (rawNumber) {
+          if (!rawNumber.startsWith('+')) {
+            rawNumber = rawNumber.length === 10 ? '+1' + rawNumber : '+' + rawNumber;
+          }
+          members.push({ name, number: rawNumber });
         }
       }
     }
+    return members;
+  } catch (error) {
+    console.error('Error fetching group members from Google Sheet:', error);
+    return [];
   }
+}
 
-  res.sendStatus(200);
+app.post('/webhook', async (req, res) => {
+  try {
+    const incomingMessage = req.body.Body;
+    const senderNumber = req.body.From;
+
+    const groupMembers = await getGroupMembers();
+
+    const senderObj = groupMembers.find(m => m.number === senderNumber);
+    const senderName = senderObj ? senderObj.name : senderNumber;
+
+    console.log(`Received message from ${senderName} (${senderNumber}): ${incomingMessage}`);
+
+    for (const member of groupMembers) {
+      if (member.number !== senderNumber) {
+        await client.messages.create({
+          body: `${senderName}: ${incomingMessage}`,
+          from: twilioNumber,
+          to: member.number
+        });
+      }
+    }
+
+    res.status(200).send('<Response></Response>');
+  } catch (error) {
+    console.error('Error handling incoming message:', error);
+    res.status(500).send('Internal Server Error');
+  }
 });
 
-const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log('Server is running on port ' + port);
+app.get('/', (req, res) => {
+  res.send('Eimek Group Chat Server with Google Sheets is running!');
+});
+
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
 });
